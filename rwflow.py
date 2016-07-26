@@ -4,10 +4,9 @@ https://en.wikipedia.org/wiki/Readers%E2%80%93writers_problem
 
 Additionally to that, we would like to be able to monitor the jobs:
 
-Active:
+Running:
 12:00:01 - Thread1 - Reading
 12:00:23 - Thread2 - Reading
-
 Pending:
 12:11:11 - Thread3 - Writing
 12:11:12 - Thread4 - Reading
@@ -26,55 +25,74 @@ import time
 
 Job = namedtuple('Job', 'start, task, exclusive, thread, blocker')
 
+# the lock required when processing the running or pending queues
 lock = threading.Lock()
+
+# the currently running tasks
 running = []
+
+# the currently pending tasks
 pending = []
 
-def read(task):
-    checkin(task, False)
+# a scheduler thread will be created as soon as a task is checked in
+# and will die once all tasks are done
+scheduler = None
 
-def write(task):
-    checkin(task, True)
-    
+
 def checkin(task, exclusive):
-    global pending
     blocker = threading.Lock()
     blocker.acquire()
     job = Job(time.asctime(), task, exclusive, threading.current_thread(), blocker)
 
     with lock:
         pending.append(job)
-    
+        
+        global scheduler
+        if not scheduler or not scheduler.is_alive():
+            scheduler = threading.Thread(name='rwflow.scheduler', target=schedule)
+            scheduler.start()
+            
     blocker.acquire()
     
 
-
 def schedule():
-    with lock:
-        # remove finished tasks
-        while running and running[0].thread.is_alive() == False:
-            running.pop(0)
-
-        # if the running queue is empty, start next job
-        if not running and pending:
-            job = pending.pop(0)
-            running.append(job)
-            job.blocker.release()
-
-        # if running jobs are not exclusive
-        if running and running[0].exclusive == False:
-            # add all pending non-exclusive jobs too
-            while pending and pending[0].exclusive == False:
+    while running or pending:
+        with lock:
+            # remove finished tasks
+            while running and running[0].thread.is_alive() == False:
+                running.pop(0)
+    
+            # if the running queue is empty, start next job
+            if not running and pending:
                 job = pending.pop(0)
                 running.append(job)
                 job.blocker.release()
+    
+            # if running jobs are not exclusive
+            if running and running[0].exclusive == False:
+                # add all pending non-exclusive jobs too
+                while pending and pending[0].exclusive == False:
+                    job = pending.pop(0)
+                    running.append(job)
+                    job.blocker.release()
+        
+        time.sleep(0.001)
+            
 
 def jobs():
     with lock:
         print('Running:')
         for job in running:
-            print(job)
-        print('Pending:')
+            if job.exclusive:
+                print('%s - %s (E)' % (job.start, job.task))
+            else:
+                print('%s - %s' % (job.start, job.task))
+                
+        print('\nPending:')
         for job in pending:
-            print(job)
+            if job.exclusive:
+                print('%s - %s (E)' % (job.start, job.task))
+            else:
+                print('%s - %s' % (job.start, job.task))
             
+

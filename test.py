@@ -1,35 +1,60 @@
+import sys
+print(sys.version)
 
-def countdown(n):
-        while n > 0:
-                if n % 1000000 == 0:
-                        print('> %d' % n)
-                n -= 1
-
+import rwflow
 import time
-
-start = time.time()
-
-COUNT = 10 * 1000 * 1000
-countdown(COUNT)
-
-print( (time.time() - start) )
-
 from threading import Thread
+import re
 
-t1 = Thread(target=countdown,args=(COUNT/5,))
-t2 = Thread(target=countdown,args=(COUNT/5,))
-t3 = Thread(target=countdown,args=(COUNT/5,))
-t4 = Thread(target=countdown,args=(COUNT/5,))
-t5 = Thread(target=countdown,args=(COUNT/5,))
-t1.start()
-t2.start()
-t3.start()
-t4.start()
-t5.start()
-t1.join()
-t2.join()
-t3.join()
-t4.join()
-t5.join()
+flow = ''
+N = 10
 
-print( (time.time() - start) )
+def appender(letter, exclusive):
+    def append():
+        global flow
+        rwflow.checkin(letter, exclusive)
+        for n in range(N):
+            flow += letter
+            time.sleep(0.01)
+    t = Thread(target=append)
+    return t    
+
+a = appender('a', False)
+b = appender('b', False)
+x = appender('x', True)
+c = appender('c', False)
+d = appender('d', False)
+
+for t in [a,b,x,c,d]:
+    t.start()
+
+print( rwflow.jobs() )
+
+for t in [a,b,x,c,d]:
+    t.join()
+
+print( flow )
+
+assert re.fullmatch('[ab]+x+[cd]+', flow)
+
+print('-------------------------')
+
+time.sleep(0.1)
+
+a = appender('a', False)
+b = appender('b', False)
+x = appender('x', True)
+c = appender('c', False)
+d = appender('d', False)
+
+for t in [a,b,x,c,d]:
+    t.start()
+
+print( rwflow.jobs() )
+
+for t in [a,b,x,c,d]:
+    t.join()
+
+print( flow )
+
+assert re.fullmatch('[ab]+x+[cd]+[ab]+x+[cd]+', flow)
